@@ -51,9 +51,15 @@ output*/
 Face_Detection/shape_predictor_68_face_landmarks.dat
 Face_Detection/shape_predictor_68_face_landmarks.dat.bz2
 
+Face_Enhancement/models/networks/Synchronized-BatchNorm-PyTorch/
+Face_Enhancement/models/networks/sync_batchnorm/
+
 Face_Enhancement/checkpoints/
 Face_Enhancement/face_checkpoints.zip
 Face_Enhancement/checkpoints.zip
+
+Global/detection_models/Synchronized-BatchNorm-PyTorch/
+Global/detection_models/sync_batchnorm/
 
 Global/checkpoints/
 Global/global_checkpoints.zip
