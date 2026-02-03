@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bringing Old Photos Back to Life</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1 class="title">Bringing Old Photos Back to Life</h1>
+      </header>
+
+      <section class="card">
+        <div class="grid2">
+          <div class="field">
+            <label class="label" for="input-path">Input file</label>
+            <div class="inputRow">
+              <input id="input-path" class="textInput" type="text" placeholder="Choose an image..." readonly />
+              <button id="btn-browse" class="btn" type="button">Browse</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="output-folder">Output folder</label>
+            <input id="output-folder" class="textInput" type="text" placeholder="Defaults to output_gui" />
+          </div>
+        </div>
+
+        <div class="grid4">
+          <label class="checkbox">
+            <input id="opt-with-scratch" type="checkbox" checked />
+            With scratch
+          </label>
+          <label class="checkbox">
+            <input id="opt-hr" type="checkbox" />
+            HR
+          </label>
+          <div class="field">
+            <label class="label" for="gpu-ids">GPU</label>
+            <input id="gpu-ids" class="textInput" type="text" value="-1" />
+          </div>
+          <div class="field">
+            <label class="label" for="python-exe">Python</label>
+            <input id="python-exe" class="textInput" type="text" value="python3" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="btn-run" class="btn primary" type="button">Modify Photo</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="progressRow">
+          <div class="progressLabel">Progress</div>
+          <div class="progressTrack" aria-label="progress">
+            <div id="progressFill" class="progressFill" style="width: 0%"></div>
+          </div>
+          <div id="progressText" class="progressText">Idle</div>
+        </div>
+        <pre id="logBox" class="logBox"></pre>
+      </section>
+
+      <section class="previews">
+        <div class="previewPanel">
+          <div class="previewTitle">Input Preview</div>
+          <div class="previewBody">
+            <img id="img-input" class="previewImg" alt="Input preview" />
+            <div id="placeholder-input" class="placeholder visible">No input selected</div>
+          </div>
+        </div>
+        <div class="previewPanel">
+          <div class="previewTitle">Output Preview</div>
+          <div class="previewBody">
+            <img id="img-output" class="previewImg" alt="Output preview" />
+            <div id="placeholder-output" class="placeholder visible">No output yet</div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="statusBar">
+        <div id="status-text">Ready</div>
+      </footer>
+    </main>
+  </body>
+</html>

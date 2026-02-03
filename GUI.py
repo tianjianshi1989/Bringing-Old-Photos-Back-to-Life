@@ -1,217 +1,218 @@
-import numpy as np
-import cv2
-import PySimpleGUI as sg
-import os.path
-import argparse
 import os
 import sys
 import shutil
-from subprocess import call
+import subprocess
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from PIL import Image, ImageOps, ImageTk
 
-def modify(image_filename=None, cv2_frame=None):
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+GUI_BUILD = "2026-02-02"
 
-    def run_cmd(command):
-        try:
-            call(command, shell=True)
-        except KeyboardInterrupt:
-            print("Process interrupted")
-            sys.exit(1)
+def _prepare_single_image_folder(input_image_path, output_folder):
+    input_dir = os.path.join(output_folder, "_gui_input")
+    if os.path.exists(input_dir):
+        shutil.rmtree(input_dir)
+    os.makedirs(input_dir, exist_ok=True)
+    shutil.copy(input_image_path, os.path.join(input_dir, os.path.basename(input_image_path)))
+    return input_dir
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input_folder", type=str,
-                        default= image_filename, help="Test images")
-    parser.add_argument(
-        "--output_folder",
-        type=str,
-        default="./output",
-        help="Restored images, please use the absolute path",
-    )
-    parser.add_argument("--GPU", type=str, default="-1", help="0,1,2")
-    parser.add_argument(
-        "--checkpoint_name", type=str, default="Setting_9_epoch_100", help="choose which checkpoint"
-    )
-    parser.add_argument("--with_scratch",default="--with_scratch" ,action="store_true")
-    opts = parser.parse_args()
 
-    gpu1 = opts.GPU
+def _pick_latest_file(dir_path):
+    if not os.path.isdir(dir_path):
+        return None
+    candidates = [
+        os.path.join(dir_path, f)
+        for f in os.listdir(dir_path)
+        if f and not f.startswith(".") and os.path.isfile(os.path.join(dir_path, f))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
 
-    # resolve relative paths before changing directory
-    opts.input_folder = os.path.abspath(opts.input_folder)
-    opts.output_folder = os.path.abspath(opts.output_folder)
-    if not os.path.exists(opts.output_folder):
-        os.makedirs(opts.output_folder)
 
-    main_environment = os.getcwd()
+def modify(input_path, output_folder=None, gpu="-1", with_scratch=True, hr=False):
+    output_folder = output_folder or os.path.join(PROJECT_ROOT, "output_gui")
+    os.makedirs(output_folder, exist_ok=True)
 
-    # Stage 1: Overall Quality Improve
-    print("Running Stage 1: Overall restoration")
-    os.chdir("./Global")
-    stage_1_input_dir = opts.input_folder
-    stage_1_output_dir = os.path.join(
-        opts.output_folder, "stage_1_restore_output")
-    if not os.path.exists(stage_1_output_dir):
-        os.makedirs(stage_1_output_dir)
-
-    if not opts.with_scratch:
-        stage_1_command = (
-            "python test.py --test_mode Full --Quality_restore --test_input "
-            + stage_1_input_dir
-            + " --outputs_dir "
-            + stage_1_output_dir
-            + " --gpu_ids "
-            + gpu1
-        )
-        run_cmd(stage_1_command)
+    if os.path.isdir(input_path):
+        input_folder = os.path.abspath(input_path)
     else:
+        input_folder = _prepare_single_image_folder(os.path.abspath(input_path), output_folder)
 
-        mask_dir = os.path.join(stage_1_output_dir, "masks")
-        new_input = os.path.join(mask_dir, "input")
-        new_mask = os.path.join(mask_dir, "mask")
-        stage_1_command_1 = (
-            "python detection.py --test_path "
-            + stage_1_input_dir
-            + " --output_dir "
-            + mask_dir
-            + " --input_size full_size"
-            + " --GPU "
-            + gpu1
+    cmd = [
+        sys.executable,
+        os.path.join(PROJECT_ROOT, "run.py"),
+        "--input_folder",
+        input_folder,
+        "--output_folder",
+        os.path.abspath(output_folder),
+        "--GPU",
+        str(gpu),
+    ]
+    if with_scratch:
+        cmd.append("--with_scratch")
+    if hr:
+        cmd.append("--HR")
+
+    subprocess.check_call(cmd, cwd=PROJECT_ROOT)
+    return _pick_latest_file(os.path.join(output_folder, "final_output"))
+
+class App:
+    def __init__(self, root):
+        self.root = root
+        self.root.title(f"Bringing-old-photos-back-to-life (GUI {GUI_BUILD})")
+        self.root.minsize(1100, 650)
+
+        self.input_path_var = tk.StringVar(value="")
+        self.with_scratch_var = tk.BooleanVar(value=True)
+        self.hr_var = tk.BooleanVar(value=False)
+        self.status_var = tk.StringVar(value="Ready")
+
+        self._in_photo = None
+        self._out_photo = None
+
+        self.root.grid_rowconfigure(3, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
+
+        top = tk.Frame(root)
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 6))
+        top.grid_columnconfigure(1, weight=1)
+
+        tk.Label(top, text="Input file:", fg="black").grid(row=0, column=0, sticky="w")
+        self.path_entry = tk.Entry(top, textvariable=self.input_path_var, highlightthickness=1, highlightbackground="#999999")
+        self.path_entry.grid(row=0, column=1, sticky="ew", padx=(6, 6))
+        tk.Button(top, text="Browse", command=self.on_browse).grid(row=0, column=2, sticky="e")
+
+        opts = tk.Frame(root)
+        opts.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 6))
+        tk.Checkbutton(opts, text="With scratch", variable=self.with_scratch_var).grid(row=0, column=0, sticky="w")
+        tk.Checkbutton(opts, text="HR", variable=self.hr_var).grid(row=0, column=1, sticky="w", padx=(10, 0))
+
+        actions = tk.Frame(root)
+        actions.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        actions.grid_columnconfigure(2, weight=1)
+
+        self.run_btn = tk.Button(actions, text="Modify Photo", command=self.on_run)
+        self.run_btn.grid(row=0, column=0, sticky="w")
+        tk.Button(actions, text="Exit", command=self.root.destroy).grid(row=0, column=1, sticky="w", padx=(10, 0))
+        tk.Label(actions, textvariable=self.status_var, fg="black").grid(row=0, column=2, sticky="w", padx=(10, 0))
+
+        imgs = tk.Frame(root)
+        imgs.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10))
+        imgs.grid_rowconfigure(0, weight=1)
+        imgs.grid_columnconfigure(0, weight=1)
+        imgs.grid_columnconfigure(1, weight=1)
+
+        self.in_canvas = tk.Canvas(imgs, width=520, height=520, bg="white", highlightthickness=2, highlightbackground="#666666")
+        self.in_canvas.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+
+        self.out_canvas = tk.Canvas(imgs, width=520, height=520, bg="white", highlightthickness=2, highlightbackground="#666666")
+        self.out_canvas.grid(row=0, column=1, sticky="nsew")
+
+        self._init_canvas(self.in_canvas, "Input Preview")
+        self._init_canvas(self.out_canvas, "Output Preview")
+
+        self.status_bar = tk.Label(root, textvariable=self.status_var, anchor="w", relief=tk.SUNKEN, bg="#ffffe0")
+        self.status_bar.grid(row=4, column=0, columnspan=2, sticky="ew")
+
+    def on_browse(self):
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            filetypes=[
+                ("Images", "*.jpg *.jpeg *.png *.bmp *.tif *.tiff"),
+                ("All files", "*.*"),
+            ],
         )
-        stage_1_command_2 = (
-            "python test.py --Scratch_and_Quality_restore --test_input "
-            + new_input
-            + " --test_mask "
-            + new_mask
-            + " --outputs_dir "
-            + stage_1_output_dir
-            + " --gpu_ids "
-            + gpu1
-        )
-        run_cmd(stage_1_command_1)
-        run_cmd(stage_1_command_2)
+        if not path:
+            return
+        path = str(path)
+        self.root.after(0, lambda p=path: self._on_file_selected(p))
 
-    # Solve the case when there is no face in the old photo
-    stage_1_results = os.path.join(stage_1_output_dir, "restored_image")
-    stage_4_output_dir = os.path.join(opts.output_folder, "final_output")
-    if not os.path.exists(stage_4_output_dir):
-        os.makedirs(stage_4_output_dir)
-    for x in os.listdir(stage_1_results):
-        img_dir = os.path.join(stage_1_results, x)
-        shutil.copy(img_dir, stage_4_output_dir)
-
-    print("Finish Stage 1 ...")
-    print("\n")
-
-    # Stage 2: Face Detection
-
-    print("Running Stage 2: Face Detection")
-    os.chdir(".././Face_Detection")
-    stage_2_input_dir = os.path.join(stage_1_output_dir, "restored_image")
-    stage_2_output_dir = os.path.join(
-        opts.output_folder, "stage_2_detection_output")
-    if not os.path.exists(stage_2_output_dir):
-        os.makedirs(stage_2_output_dir)
-    stage_2_command = (
-        "python detect_all_dlib.py --url " + stage_2_input_dir +
-        " --save_url " + stage_2_output_dir
-    )
-    run_cmd(stage_2_command)
-    print("Finish Stage 2 ...")
-    print("\n")
-
-    # Stage 3: Face Restore
-    print("Running Stage 3: Face Enhancement")
-    os.chdir(".././Face_Enhancement")
-    stage_3_input_mask = "./"
-    stage_3_input_face = stage_2_output_dir
-    stage_3_output_dir = os.path.join(
-        opts.output_folder, "stage_3_face_output")
-    if not os.path.exists(stage_3_output_dir):
-        os.makedirs(stage_3_output_dir)
-    stage_3_command = (
-        "python test_face.py --old_face_folder "
-        + stage_3_input_face
-        + " --old_face_label_folder "
-        + stage_3_input_mask
-        + " --tensorboard_log --name "
-        + opts.checkpoint_name
-        + " --gpu_ids "
-        + gpu1
-        + " --load_size 256 --label_nc 18 --no_instance --preprocess_mode resize --batchSize 4 --results_dir "
-        + stage_3_output_dir
-        + " --no_parsing_map"
-    )
-    run_cmd(stage_3_command)
-    print("Finish Stage 3 ...")
-    print("\n")
-
-    # Stage 4: Warp back
-    print("Running Stage 4: Blending")
-    os.chdir(".././Face_Detection")
-    stage_4_input_image_dir = os.path.join(
-        stage_1_output_dir, "restored_image")
-    stage_4_input_face_dir = os.path.join(stage_3_output_dir, "each_img")
-    stage_4_output_dir = os.path.join(opts.output_folder, "final_output")
-    if not os.path.exists(stage_4_output_dir):
-        os.makedirs(stage_4_output_dir)
-    stage_4_command = (
-        "python align_warp_back_multiple_dlib.py --origin_url "
-        + stage_4_input_image_dir
-        + " --replace_url "
-        + stage_4_input_face_dir
-        + " --save_url "
-        + stage_4_output_dir
-    )
-    run_cmd(stage_4_command)
-    print("Finish Stage 4 ...")
-    print("\n")
-
-    print("All the processing is done. Please check the results.")
-
-# --------------------------------- The GUI ---------------------------------
-
-# First the window layout...
-
-images_col = [[sg.Text('Input file:'), sg.In(enable_events=True, key='-IN FILE-'), sg.FileBrowse()],
-              [sg.Button('Modify Photo', key='-MPHOTO-'), sg.Button('Exit')],
-              [sg.Image(filename='', key='-IN-'), sg.Image(filename='', key='-OUT-')],]
-# ----- Full layout -----
-layout = [[sg.VSeperator(), sg.Column(images_col)]]
-
-# ----- Make the window -----
-window = sg.Window('Bringing-old-photos-back-to-life', layout, grab_anywhere=True)
-
-# ----- Run the Event Loop -----
-prev_filename = colorized = cap = None
-while True:
-    event, values = window.read()
-    if event in (None, 'Exit'):
-        break
-
-    elif event == '-MPHOTO-':
+    def _on_file_selected(self, path):
+        self.input_path_var.set(path)
+        self.status_var.set(f"Selected: {os.path.basename(path)}")
+        self.root.title(f"Bringing-old-photos-back-to-life (GUI {GUI_BUILD}) - {os.path.basename(path)}")
         try:
-            n1 = filename.split("/")[-2]
-            n2 = filename.split("/")[-3]
-            n3 = filename.split("/")[-1]
-            filename= str(f"./{n2}/{n1}")
-            modify(filename)
-           
-            global f_image
-            f_image = f'./output/final_output/{n3}'
-            image = cv2.imread(f_image)
-            window['-OUT-'].update(data=cv2.imencode('.png', image)[1].tobytes())
-            
-        except:
-            continue
+            self._set_canvas_image(self.in_canvas, path, is_output=False)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
 
-    elif event == '-IN FILE-':      # A single filename was chosen
-        filename = values['-IN FILE-']
-        if filename != prev_filename:
-            prev_filename = filename
+    def on_run(self):
+        input_path = self.input_path_var.get().strip()
+        if not input_path:
+            messagebox.showerror("Error", "Please choose an input file first.")
+            return
+        if not os.path.exists(input_path):
+            messagebox.showerror("Error", f"Input not found: {input_path}")
+            return
+
+        self.run_btn.config(state=tk.DISABLED)
+        self.status_var.set("Running...")
+
+        def task():
             try:
-                image = cv2.imread(filename)
-                window['-IN-'].update(data=cv2.imencode('.png', image)[1].tobytes())
-            except:
-                continue
+                output_path = modify(
+                    input_path,
+                    output_folder=os.path.join(PROJECT_ROOT, "output_gui"),
+                    gpu="-1",
+                    with_scratch=bool(self.with_scratch_var.get()),
+                    hr=bool(self.hr_var.get()),
+                )
+                if not output_path:
+                    raise RuntimeError("No output image found under output_gui/final_output")
+                self.root.after(0, lambda: self._on_done(output_path, None))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_done(None, e))
 
-# ----- Exit program -----
-window.close()
+        threading.Thread(target=task, daemon=True).start()
+
+    def _on_done(self, output_path, error):
+        self.run_btn.config(state=tk.NORMAL)
+        self.status_var.set("")
+        if error is not None:
+            messagebox.showerror("Error", str(error))
+            return
+        try:
+            self._set_canvas_image(self.out_canvas, output_path, is_output=True)
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    def _init_canvas(self, canvas, title):
+        canvas.delete("all")
+        canvas.create_rectangle(1, 1, 10000, 10000, outline="")
+        canvas.create_text(10, 10, anchor="nw", text=title, fill="black", font=("Helvetica", 14, "bold"), tags=("title",))
+
+    def _set_canvas_image(self, canvas, path, is_output):
+        canvas.delete("img")
+        self.root.update_idletasks()
+        img = Image.open(path)
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+        fallback_w = int(canvas.cget("width") or 520)
+        fallback_h = int(canvas.cget("height") or 520)
+        canvas_width = max(int(canvas.winfo_width()), fallback_w, 520)
+        canvas_height = max(int(canvas.winfo_height()), fallback_h, 520)
+        if canvas_width < 200 or canvas_height < 200:
+            canvas_width = max(canvas_width, 800)
+            canvas_height = max(canvas_height, 600)
+        max_w = max(canvas_width - 20, 100)
+        max_h = max(canvas_height - 60, 100)
+        img.thumbnail((max_w, max_h))
+        photo = ImageTk.PhotoImage(img, master=self.root)
+        canvas.create_image(canvas_width // 2, canvas_height // 2 + 10, image=photo, anchor="center", tags=("img",))
+        canvas.create_text(10, 40, anchor="nw", text=os.path.basename(path), fill="black", font=("Helvetica", 12), tags=("img",))
+        canvas.image = photo
+        canvas.update_idletasks()
+        if is_output:
+            self._out_photo = photo
+        else:
+            self._in_photo = photo
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
